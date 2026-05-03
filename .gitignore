@@ -14,14 +14,14 @@ htmlcov/
 .env.*
 
 # Data and generated artifacts
-data/
-runs/
-results/
-logs/
-checkpoints/
-lightning_logs/
-wandb/
-mlruns/
+/data/
+/runs/
+/results/
+/logs/
+/checkpoints/
+/lightning_logs/
+/wandb/
+/mlruns/
 *.h5ad
 *.h5
 *.zarr

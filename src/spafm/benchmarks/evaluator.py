@@ -12,7 +12,7 @@ import numpy as np
 from anndata import read_h5ad
 
 from spafm.benchmarks.baselines import HVGMeanEmbedder, PCAEmbedder
-from spafm.benchmarks.embedder import SpaFMEmbedder
+from spafm.benchmarks.embedder import HierSpaFMEmbedder, SpaFMEmbedder
 from spafm.benchmarks.metrics import cluster_scores, linear_probe_cv, regression_scores
 from spafm.tokenization import GeneVocab, STTokenizer, TokenizerConfig
 
@@ -36,6 +36,14 @@ def _build_embedder(cfg: dict[str, Any], tokenizer: STTokenizer):
             tokenizer=tokenizer,
             ckpt=cfg.get("ckpt"),
             batch_size=int(cfg.get("batch_size", 8)),
+            device=cfg.get("device", "cpu"),
+        )
+    if t == "hier":
+        return HierSpaFMEmbedder(
+            model_config=cfg["model_config"],
+            tokenizer=tokenizer,
+            ckpt=cfg.get("ckpt"),
+            spots_per_batch=int(cfg.get("spots_per_batch", 64)),
             device=cfg.get("device", "cpu"),
         )
     if t == "pca":

@@ -133,6 +133,7 @@ def extract_inner_attention_picture(
     device: str = "cpu",
     max_spots: int | None = 200,
     seed: int = 0,
+    chunk_size: int = 32,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """对一个 slice 跑前向，返回：
 
@@ -144,6 +145,13 @@ def extract_inner_attention_picture(
                  （只在该基因实际出现在该 spot 时记分，否则 NaN）。
         sel: (N_spots,) 选中的 spot 全局索引
         genes_in_vocab: list[str] 长度 V_picture，列名（gene symbol）
+
+    Notes
+    -----
+    ``chunk_size`` 控制一次前向多少 spot；inner attention 张量形状为
+    ``(n_layers, 1, N, H, L, L)``，N=300 / H=8 / L=256 时单层 ~600MB，
+    24GB 卡爆显存。分块后每次只缓存 ``chunk_size`` 个 spot 的 attn，
+    且立刻折叠到 ``in_score (chunk, L)`` 后释放。
     """
     n = adata.n_obs
     rng = np.random.default_rng(seed)
@@ -164,37 +172,76 @@ def extract_inner_attention_picture(
             )
         )
     N = len(sel)
+    chunk_size = max(1, int(chunk_size))
 
-    item = {
-        "spot_dicts": spot_dicts,
-        "spot_coords": coords_full[sel],
-        "spot_attention_mask": np.ones(N, dtype=bool),
-        "n_spots_valid": np.int64(N),
-        "slice_idx": np.int64(0),
-    }
-    coll = make_slice_collator(tokenizer, n_spots_per_sample=N)
-    batch = coll([item])
-    batch = {k: v.to(device) for k, v in batch.items()}
+    # ---- 分块前向，累积 in_score / gene_ids / attn_mask ---- #
+    gene_ids_chunks: list[np.ndarray] = []
+    attn_mask_chunks: list[np.ndarray] = []
+    in_score_chunks: list[np.ndarray] = []
 
-    out = model(
-        gene_ids=batch["gene_ids"],
-        pos_emb=batch["pos_emb"],
-        attention_mask=batch["attention_mask"],
-        spot_coords=batch["spot_coords"],
-        spot_attention_mask=batch["spot_attention_mask"],
-        coords=batch["coords"],
-        value_ids=batch.get("value_ids"),
-        value_floats=batch.get("value_floats"),
-        return_inner_attn=True,
+    for s_start in range(0, N, chunk_size):
+        s_end = min(N, s_start + chunk_size)
+        n_chunk = s_end - s_start
+        item = {
+            "spot_dicts": spot_dicts[s_start:s_end],
+            "spot_coords": coords_full[sel[s_start:s_end]],
+            "spot_attention_mask": np.ones(n_chunk, dtype=bool),
+            "n_spots_valid": np.int64(n_chunk),
+            "slice_idx": np.int64(0),
+        }
+        coll = make_slice_collator(tokenizer, n_spots_per_sample=n_chunk)
+        batch = coll([item])
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        out = model(
+            gene_ids=batch["gene_ids"],
+            pos_emb=batch["pos_emb"],
+            attention_mask=batch["attention_mask"],
+            spot_coords=batch["spot_coords"],
+            spot_attention_mask=batch["spot_attention_mask"],
+            coords=batch["coords"],
+            value_ids=batch.get("value_ids"),
+            value_floats=batch.get("value_floats"),
+            return_inner_attn=True,
+        )
+        inner_attns = out["inner_attentions"]  # list of (B=1, n_chunk, H, L, L)
+        # 逐层累加 mean over heads；避免 torch.stack(...) 一次性占两份显存
+        L_chunk = inner_attns[0].shape[-1]
+        in_score_acc = torch.zeros(n_chunk, L_chunk, device=device, dtype=torch.float32)
+        for a in inner_attns:
+            # a: (1, n_chunk, H, L, L)；先对 head 取平均，再对行(=被多少 token 关注)取平均
+            a_mean_h = a[0].float().mean(dim=1)  # (n_chunk, L, L)
+            in_score_acc += a_mean_h.mean(dim=1)  # (n_chunk, L)
+            del a_mean_h
+        in_score_acc /= float(len(inner_attns))
+
+        gene_ids_chunks.append(batch["gene_ids"][0].cpu().numpy())  # (n_chunk, L_chunk)
+        attn_mask_chunks.append(batch["attention_mask"][0].cpu().numpy())
+        in_score_chunks.append(in_score_acc.cpu().numpy().astype(np.float64))
+
+        del out, inner_attns, in_score_acc, batch
+        if device.startswith("cuda"):
+            torch.cuda.empty_cache()
+
+    # 不同 chunk 的 L 可能不同（pad 到各 chunk 内部最大），需对齐到全局 L_max
+    L_max = max(g.shape[1] for g in gene_ids_chunks)
+
+    def _pad_to(arr: np.ndarray, L_target: int, fill: int | float = 0) -> np.ndarray:
+        L_cur = arr.shape[1]
+        if L_cur == L_target:
+            return arr
+        pad = np.full((arr.shape[0], L_target - L_cur), fill, dtype=arr.dtype)
+        return np.concatenate([arr, pad], axis=1)
+
+    gene_ids_np = np.concatenate(
+        [_pad_to(g, L_max, 0) for g in gene_ids_chunks], axis=0
+    )  # (N, L_max)
+    attn_mask_np = np.concatenate(
+        [_pad_to(m, L_max, False) for m in attn_mask_chunks], axis=0
     )
-    inner_attns = out["inner_attentions"]  # list of (B=1, N, H, L, L)
-    A = torch.stack(inner_attns, dim=0).mean(dim=(0, 3))[0]  # (N, L, L)
-    # in-attention：列方向求平均（被多少其他 token 关注）
-    in_score = A.mean(dim=1)  # (N, L)
-
-    gene_ids_np = batch["gene_ids"][0].cpu().numpy()  # (N, L)
-    attn_mask_np = batch["attention_mask"][0].cpu().numpy()  # (N, L) bool
-    in_score_np = in_score.cpu().numpy().astype(np.float64)  # (N, L)
+    in_score_np = np.concatenate(
+        [_pad_to(s, L_max, 0.0) for s in in_score_chunks], axis=0
+    )
 
     # 收集出现过的所有 gene token id（vocab 内）
     valid_ids = gene_ids_np[attn_mask_np]
@@ -260,17 +307,25 @@ def run_svg_analysis(
     device: str = "cpu",
     seed: int = 0,
     min_nonnan_frac: float = 0.3,
+    chunk_size: int = 32,
 ) -> SVGResult:
     """SVG 评测主流程。
 
     Args:
         min_nonnan_frac: 一个基因在 attention picture 中至少要在
             ``min_nonnan_frac * N_spots`` 个 spot 出现才参与打分。
+        chunk_size: 每次前向多少 spot（控制显存峰值）。
     """
     adata = read_h5ad(h5ad)
 
     picture, sel, genes_in_vocab = extract_inner_attention_picture(
-        model, adata, tokenizer, device=device, max_spots=max_spots, seed=seed
+        model,
+        adata,
+        tokenizer,
+        device=device,
+        max_spots=max_spots,
+        seed=seed,
+        chunk_size=chunk_size,
     )
     N = picture.shape[0]
     coords = np.asarray(adata.obsm["spatial"], dtype=np.float64)[sel, :2]

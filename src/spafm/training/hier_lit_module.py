@@ -113,7 +113,8 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
         flat_ids = gene_ids.reshape(B * N, L)
         flat_attn = attn.reshape(B * N, L)
         m_cfg = self.cfg.masking
-        masked_flat, mask_pos_flat = apply_mgm_mask(
+        # view-1：第一组独立 mask（用于 MGM 监督）
+        masked_flat1, mask_pos_flat1 = apply_mgm_mask(
             flat_ids,
             flat_attn,
             vocab_size=V,
@@ -121,8 +122,18 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
             mask_token_prob=float(m_cfg["mask_token_prob"]),
             random_token_prob=float(m_cfg["random_token_prob"]),
         )
-        masked_ids = masked_flat.reshape(B, N, L)
-        mask_positions = mask_pos_flat.reshape(B, N, L)
+        # view-2：第二组独立 mask（仅用于 CCL，让两视图都有扰动 → 防止 z1≈z2 退化）
+        masked_flat2, _ = apply_mgm_mask(
+            flat_ids,
+            flat_attn,
+            vocab_size=V,
+            mask_ratio=float(m_cfg["mask_ratio"]),
+            mask_token_prob=float(m_cfg["mask_token_prob"]),
+            random_token_prob=float(m_cfg["random_token_prob"]),
+        )
+        masked_ids1 = masked_flat1.reshape(B, N, L)
+        masked_ids2 = masked_flat2.reshape(B, N, L)
+        mask_positions = mask_pos_flat1.reshape(B, N, L)
 
         common = dict(
             pos_emb=batch["pos_emb"],
@@ -135,7 +146,7 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
         )
 
         # view-1: mask 输入 → 训 MGM
-        out1 = self.model(gene_ids=masked_ids, return_gene_logits=True, **common)
+        out1 = self.model(gene_ids=masked_ids1, return_gene_logits=True, **common)
         # gene_logits: (B, N, L, V)
         l_mgm = mgm_loss(
             out1["gene_logits"].reshape(B * N, L, V),
@@ -143,8 +154,8 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
             mask_positions.reshape(B * N, L),
         )
 
-        # view-2: 原始输入
-        out2 = self.model(gene_ids=gene_ids, return_gene_logits=False, **common)
+        # view-2: 第二组独立 mask（仅 CCL 用）
+        out2 = self.model(gene_ids=masked_ids2, return_gene_logits=False, **common)
 
         use_outer = bool(self.cfg.losses.get("use_outer_repr_for_ccl", True))
         repr1 = out1["spot_repr"] if use_outer else out1["cell_repr"]  # (B, N, d)
@@ -159,8 +170,30 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
         z2 = z2_all[spot_mask_flat]
         if z1.shape[0] >= 2:
             l_ccl = info_nce(z1, z2, temperature=float(self.cfg.losses["ccl_temperature"]))
+            # ---- CCL 诊断指标（detach，不影响梯度） ---- #
+            with torch.no_grad():
+                Bz = z1.shape[0]
+                sim = z1 @ z2.t()  # (Bz, Bz)
+                pos_sim = sim.diag().mean()
+                if Bz >= 2:
+                    neg_sim = (sim.sum() - sim.diag().sum()) / (Bz * (Bz - 1))
+                else:
+                    neg_sim = torch.tensor(0.0, device=sim.device)
+                # 对齐：||z1 - z2||^2 mean（已 L2-normalize → ∈[0, 4]）
+                align = (z1 - z2).pow(2).sum(dim=-1).mean()
+                # 均匀度：log E_{i!=j} exp(-2 ||z1_i - z1_j||^2)
+                if Bz >= 4:
+                    pdist_sq = torch.cdist(z1, z1).pow(2)
+                    mask = ~torch.eye(Bz, dtype=torch.bool, device=sim.device)
+                    uniform = pdist_sq[mask].mul(-2.0).exp().mean().log()
+                else:
+                    uniform = torch.tensor(0.0, device=sim.device)
         else:
             l_ccl = torch.tensor(0.0, device=l_mgm.device)
+            pos_sim = torch.tensor(0.0, device=l_mgm.device)
+            neg_sim = torch.tensor(0.0, device=l_mgm.device)
+            align = torch.tensor(0.0, device=l_mgm.device)
+            uniform = torch.tensor(0.0, device=l_mgm.device)
 
         w_mgm = float(self.cfg.losses["mgm_weight"])
         w_ccl = float(self.cfg.losses["ccl_weight"])
@@ -171,6 +204,10 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
             "loss_ccl": l_ccl.detach(),
             "n_masked": mask_positions.sum().detach().float(),
             "n_spots": spot_mask_flat.sum().detach().float(),
+            "ccl_pos_sim": pos_sim.detach(),
+            "ccl_neg_sim": neg_sim.detach(),
+            "ccl_align": align.detach(),
+            "ccl_uniform": uniform.detach(),
         }
 
     # ------------------------------------------------------------------ #
@@ -184,6 +221,10 @@ class HierarchicalSpaFMPretrainModule(pl.LightningModule):
                 "train/loss_ccl": out["loss_ccl"],
                 "train/n_masked": out["n_masked"],
                 "train/n_spots": out["n_spots"],
+                "train/ccl_pos_sim": out["ccl_pos_sim"],
+                "train/ccl_neg_sim": out["ccl_neg_sim"],
+                "train/ccl_align": out["ccl_align"],
+                "train/ccl_uniform": out["ccl_uniform"],
             },
             on_step=True,
             on_epoch=False,

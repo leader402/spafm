@@ -39,6 +39,7 @@ def main(
     device: str = typer.Option("cpu", "--device"),
     seed: int = typer.Option(0, "--seed"),
     min_nonnan_frac: float = typer.Option(0.3, "--min-nonnan-frac"),
+    chunk_size: int = typer.Option(32, "--chunk-size", help="每次前向多少 spot（控制显存）"),
     out: Path | None = typer.Option(None, "--out"),
 ) -> None:
     tokenizer = _build_tokenizer(str(tokenizer_config), [h5ad])
@@ -61,6 +62,7 @@ def main(
         device=device,
         seed=seed,
         min_nonnan_frac=min_nonnan_frac,
+        chunk_size=chunk_size,
     )
 
     payload = res.to_dict()

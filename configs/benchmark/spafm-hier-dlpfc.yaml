@@ -1,0 +1,31 @@
+# DLPFC 层级聚类 / linear probe —— 用 50k-step Hierarchical 预训练 ckpt。
+#
+# 前置：
+#   1. python scripts/data/merge_dlpfc_layer.py  # 把 layer 真值写入 obs
+#   2. ckpt 已位于 runs/spafm-s-hier-multi/ckpt/last-v1.ckpt
+#
+# 用法：
+#     spafm eval -c configs/benchmark/spafm-hier-dlpfc.yaml
+
+data:
+  h5ad_glob: "data/processed/spatiallibd-dlpfc-maynard2021/*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s-visium-mouse.yaml
+
+embedder:
+  type: hier
+  model_config: configs/model/spafm-s-hier.yaml
+  ckpt: runs/spafm-s-hier-multi/ckpt/last-v1.ckpt
+  spots_per_batch: 64
+  device: cuda
+
+tasks:
+  - name: spatial_domain
+    label_key: layer
+  - name: cell_type
+    label_key: layer       # 复用 layer：用 logistic regression 看可分性
+    cv_folds: 5
+
+output:
+  json_path: results/benchmark-dlpfc-layer.json
+
+seed: 42

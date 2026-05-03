@@ -362,15 +362,35 @@ def load_hier_from_ckpt(
         cfg = HierarchicalConfig(inner=ModelConfig(**inner), **rest)
     else:
         cfg = model_config
-    if vocab_size_override is not None:
-        cfg.inner.vocab_size = int(vocab_size_override)
-    model = HierarchicalSpaFM(cfg).to(device).eval()
-
+    # 先把 ckpt 读进来，按 ckpt 内的 gene embedding 形状推断 vocab_size，
+    # 这样无论 model_config / tokenizer 写的是多少，都能与 ckpt 严格对齐。
     sd = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     sd = sd.get("state_dict", sd)
     bb = {k.removeprefix("model."): v for k, v in sd.items() if k.startswith("model.")}
     if not bb:
         bb = sd
+
+    ckpt_vocab: int | None = None
+    emb_w = bb.get("inner.embed.gene.emb.weight")
+    if emb_w is not None:
+        ckpt_vocab = int(emb_w.shape[0])
+
+    if ckpt_vocab is not None:
+        if vocab_size_override is not None and int(vocab_size_override) > ckpt_vocab:
+            raise ValueError(
+                f"[load_hier_from_ckpt] tokenizer vocab ({int(vocab_size_override)}) "
+                f"larger than ckpt vocab ({ckpt_vocab}); 词表与 ckpt 不兼容。"
+            )
+        if int(cfg.inner.vocab_size) != ckpt_vocab:
+            print(
+                f"[load_hier_from_ckpt] override cfg.inner.vocab_size "
+                f"{cfg.inner.vocab_size} -> {ckpt_vocab} (from ckpt)"
+            )
+        cfg.inner.vocab_size = ckpt_vocab
+    elif vocab_size_override is not None:
+        cfg.inner.vocab_size = int(vocab_size_override)
+
+    model = HierarchicalSpaFM(cfg).to(device).eval()
     missing, unexpected = model.load_state_dict(bb, strict=False)
     print(f"[load_hier_from_ckpt] missing={len(missing)} unexpected={len(unexpected)}")
     return model

@@ -1,0 +1,46 @@
+# 真实数据预训练 —— Hierarchical SpaFM-S × 小鼠脑。
+#
+# 启动：
+#     spafm pretrain-hier --config configs/training/spafm-s-pretrain-hier-mouse.yaml
+
+data:
+  h5ad_glob: "data/processed/visium-mouse-*/V1_Mouse_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s-visium-mouse.yaml
+  # 笔记本安全档：B=2×N=24=48 cells/step，bf16 下显存峰值 ~10GB
+  # 服务器（≥40GB）：可改 n_spots_per_sample=128, samples_per_slice=32
+  n_spots_per_sample: 24
+  samples_per_slice: 16
+
+model_config: configs/model/spafm-s-hier.yaml
+
+masking:
+  mask_ratio: 0.15
+  mask_token_prob: 0.8
+  random_token_prob: 0.1
+
+losses:
+  mgm_weight: 1.0
+  ccl_weight: 0.1
+  ccl_temperature: 0.07
+  use_outer_repr_for_ccl: true
+
+optim:
+  lr: 3.0e-4
+  weight_decay: 0.05
+  betas: [0.9, 0.95]
+  warmup_steps: 50
+  max_steps: 1000
+
+trainer:
+  accelerator: auto
+  devices: 1
+  precision: bf16-mixed
+  max_steps: 1000
+  log_every_n_steps: 10
+  gradient_clip_val: 1.0
+  default_root_dir: runs/spafm-s-hier-mouse
+
+# 笔记本：B=2×N=24=48 cells/step；服务器可加大
+batch_size: 2
+num_workers: 2
+seed: 42

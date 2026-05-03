@@ -1,0 +1,19 @@
+data:
+  h5ad_glob: "data/processed/visium-mouse-*/V1_Mouse_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s-visium-mouse.yaml
+
+embedder:
+  type: pca
+  n_components: 64
+
+tasks:
+  - name: cell_type
+    label_key: cell_type
+    cv_folds: 5
+  - name: spatial_domain
+    label_key: niche_label
+
+output:
+  json_path: results/benchmark-real-mouse-pca.json
+
+seed: 42

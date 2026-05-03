@@ -1,0 +1,17 @@
+# SpaFM-L 模型配置（约 600M 参数）
+vocab_size: 64000
+n_value_bins: 51
+expression_mode: bin
+
+d_model: 1024
+d_pos: 512
+n_layers: 24
+n_heads: 16
+d_ffn: 4096
+dropout: 0.1
+
+spatial_bias:
+  enabled: true
+  sigma: 200.0
+
+tie_gene_embedding: true

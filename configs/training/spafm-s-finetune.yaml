@@ -1,0 +1,41 @@
+data:
+  h5ad_glob: "data/processed/*/demo_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s.yaml
+  label_key: cell_type             # 分类任务才需要
+  task: classification             # classification | imputation
+
+model_config: configs/model/spafm-s.yaml
+pretrained_ckpt: null              # 留空则随机初始化（仅 smoke）
+
+adaptation:
+  strategy: lora                   # linear_probe | lora | full
+  lora:
+    r: 8
+    alpha: 16
+    dropout: 0.0
+    target_modules: [qkv, out]
+
+head:
+  type: cell_type                  # cell_type | spatial_domain | imputation
+  num_classes: 8
+  hidden: 128
+
+optim:
+  lr: 1.0e-3
+  weight_decay: 0.01
+  betas: [0.9, 0.95]
+  warmup_steps: 20
+  max_steps: 200
+
+trainer:
+  accelerator: auto
+  devices: 1
+  precision: 32
+  max_steps: 200
+  log_every_n_steps: 10
+  gradient_clip_val: 1.0
+  default_root_dir: runs/spafm-s-ft
+
+batch_size: 8
+num_workers: 0
+seed: 42

@@ -1,0 +1,31 @@
+# 真实数据评测 —— SpaFM-S × 小鼠脑（用 5000-step 真实预训练 ckpt）。
+#
+# 用法：
+#     spafm eval -c configs/benchmark/spafm-s-real-mouse.yaml
+
+data:
+  h5ad_glob: "data/processed/visium-mouse-*/V1_Mouse_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s-visium-mouse.yaml
+
+embedder:
+  type: spafm
+  model_config: configs/model/spafm-s.yaml
+  ckpt: runs/spafm-s-real-mouse/ckpt/last.ckpt
+  batch_size: 8
+  device: cuda
+
+# 真实小鼠脑伪标签（PCA+Leiden / spatial+Leiden）已写入 obs：
+#   spafm data add-pseudo-labels "data/processed/visium-mouse-*/V1_Mouse_*.h5ad" --overwrite
+tasks:
+  - name: cell_type
+    label_key: cell_type
+    cv_folds: 5
+  - name: spatial_domain
+    label_key: niche_label
+  - name: imputation
+    mask_ratio: 0.2
+
+output:
+  json_path: results/benchmark-real-mouse.json
+
+seed: 42

@@ -1,0 +1,23 @@
+# SpaFM-S 默认 tokenizer 配置
+# 用法：
+#     from spafm.tokenization import STTokenizer, TokenizerConfig
+#     cfg = TokenizerConfig.from_yaml("configs/tokenizer/spafm-s.yaml")
+#     tok = STTokenizer.from_config(cfg)
+#     batch = tok.encode(adata)
+
+vocab_path: data/external/gene_vocab.tsv
+max_genes: 1024
+gene_select: top_k
+
+expression:
+  mode: bin
+  n_bins: 51
+
+spatial:
+  mode: sincos
+  dim: 128
+  coord_scale: 1000.0
+
+add_cls: true
+add_niche: false
+seed: 0

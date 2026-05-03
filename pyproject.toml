@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spafm"
+version = "0.0.1"
+description = "Spatial Transcriptomics Foundation Model"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "SpaFM Contributors" }]
+keywords = ["spatial-transcriptomics", "foundation-model", "single-cell", "deep-learning"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "scipy>=1.11",
+    "scikit-learn>=1.3",
+    "anndata>=0.10",
+    "scanpy>=1.10",
+    "squidpy>=1.4",
+    "h5py>=3.10",
+    "zarr>=2.17",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "rich>=13.7",
+    "typer>=0.12",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dl = [
+    "torch>=2.2",
+    "lightning>=2.2",
+    "torchmetrics>=1.3",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "black>=24.0",
+    "ipykernel",
+    "jupyterlab",
+]
+
+[project.scripts]
+spafm = "spafm.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["spafm*", "scripts*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]  # 由 black 控制行宽
+
+[tool.ruff.lint.per-file-ignores]
+# Typer 标准用法依赖默认参数中的函数调用
+"**/cli.py" = ["B008"]
+"scripts/**/*.py" = ["B008"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]

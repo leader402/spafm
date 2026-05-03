@@ -1,0 +1,63 @@
+# 多切片 Hierarchical SpaFM-S 预训练（服务器档）。
+#
+# 启动：
+#     spafm pretrain-hier -c configs/training/spafm-s-pretrain-hier-multi.yaml
+#
+# 数据假设（需先执行 docs/playbooks/server-data-prep.md A 档）：
+#     - data/processed/visium-mouse-*/V1_Mouse_*.h5ad         （鼠脑/鼠肾约 8 片）
+#     - data/processed/visium-human-*/*.h5ad                  （人体多组织约 10 片）
+#     - data/processed/spatiallibd-dlpfc-maynard2021/151*/*.h5ad  （DLPFC 12 片）
+#
+# 笔记本上若没有这些数据，会回退报错；本地 smoke 请用
+# spafm-s-pretrain-hier-mouse.yaml。
+
+data:
+  # 多 glob：合并 + 去重
+  h5ad_globs:
+    - "data/processed/visium-mouse-*/V1_Mouse_*.h5ad"
+    - "data/processed/visium-mouse-*/V1_Adult_Mouse_*.h5ad"
+    - "data/processed/visium-human-*/*.h5ad"
+    - "data/processed/spatiallibd-dlpfc-maynard2021/*/*.h5ad"
+
+  tokenizer_config: configs/tokenizer/spafm-s-visium-mouse.yaml
+  # 服务器档（假设 ≥ 40GB 显存）：
+  n_spots_per_sample: 128
+  samples_per_slice: 32
+
+model_config: configs/model/spafm-s-hier.yaml
+
+masking:
+  mask_ratio: 0.15
+  mask_token_prob: 0.8
+  random_token_prob: 0.1
+
+losses:
+  mgm_weight: 1.0
+  ccl_weight: 0.1
+  ccl_temperature: 0.07
+  use_outer_repr_for_ccl: true
+
+optim:
+  lr: 1.0e-4
+  weight_decay: 0.05
+  betas: [0.9, 0.95]
+  warmup_steps: 1000
+  max_steps: 50000
+
+trainer:
+  accelerator: auto
+  devices: 1
+  precision: bf16-mixed
+  max_steps: 50000
+  log_every_n_steps: 50
+  gradient_clip_val: 1.0
+  default_root_dir: runs/spafm-s-hier-multi
+
+# 服务器档 batch
+batch_size: 4
+num_workers: 8
+seed: 42
+
+# 多 slice 时容许更多基因不可 mask 的 spot（HEST/DLPFC vocab 覆盖差异大）
+min_maskable_ratio: 0.3
+strict_tokenization_check: false

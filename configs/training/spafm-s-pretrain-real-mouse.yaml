@@ -1,0 +1,46 @@
+# 真实数据预训练 —— SpaFM-S × 小鼠脑（2 切片，~6k spots）。
+#
+# 前置：
+#     spafm data build-all --corpus configs/data/corpus-visium-mouse.yaml
+#
+# 启动：
+#     spafm pretrain --config configs/training/spafm-s-pretrain-real-mouse.yaml
+
+data:
+  h5ad_glob: "data/processed/visium-mouse-*/V1_Mouse_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s-visium-mouse.yaml
+
+model_config: configs/model/spafm-s.yaml
+
+masking:
+  mask_ratio: 0.15
+  mask_token_prob: 0.8
+  random_token_prob: 0.1
+
+losses:
+  mgm_weight: 1.0
+  ccl_weight: 0.1
+  ccl_temperature: 0.07
+
+knowledge:
+  enabled: false
+
+optim:
+  lr: 3.0e-4
+  weight_decay: 0.05
+  betas: [0.9, 0.95]
+  warmup_steps: 200
+  max_steps: 5000
+
+trainer:
+  accelerator: auto       # 服务器上有 GPU 时自动用 GPU
+  devices: 1
+  precision: bf16-mixed   # CPU 模式会自动回退到 32
+  max_steps: 5000
+  log_every_n_steps: 20
+  gradient_clip_val: 1.0
+  default_root_dir: runs/spafm-s-real-mouse
+
+batch_size: 4
+num_workers: 4
+seed: 42

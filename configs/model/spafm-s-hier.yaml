@@ -1,0 +1,23 @@
+# SpaFM-S Hierarchical：内层 6 层 per-cell + 外层 2 层 spot-as-token。
+# 外层 sigma=1000 适合 Visium spot 尺度（~100µm 间距）。
+inner:
+  vocab_size: 64000
+  n_value_bins: 51
+  expression_mode: bin
+  d_model: 256
+  d_pos: 128
+  n_layers: 6
+  n_heads: 4
+  d_ffn: 1024
+  dropout: 0.1
+  spatial_bias:
+    enabled: true
+    sigma: 200.0
+  tie_gene_embedding: true
+
+outer_n_layers: 2
+outer_n_heads: 4
+outer_d_ffn: 1024
+outer_dropout: 0.1
+outer_spatial_bias_enabled: true
+outer_spatial_sigma: 1000.0

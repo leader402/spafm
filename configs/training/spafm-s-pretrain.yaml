@@ -1,0 +1,44 @@
+data:
+  # glob 样例：跑完 `spafm-data build-all` 后会出现这些 demo h5ad
+  h5ad_glob: "data/processed/*/demo_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s.yaml
+
+model_config: configs/model/spafm-s.yaml
+
+masking:
+  mask_ratio: 0.15
+  mask_token_prob: 0.8
+  random_token_prob: 0.1
+
+losses:
+  mgm_weight: 1.0
+  ccl_weight: 0.1
+  ccl_temperature: 0.07
+
+# 知识增强（Stage 5）。enabled=false 时与 Stage 4 行为一致。
+knowledge:
+  enabled: false
+  prior_path: data/external/gene_prior_demo.npz
+  prior_format: npz                # npz | tsv
+  alignment_weight: 0.1
+  freeze_prior: true
+
+optim:
+  lr: 3.0e-4
+  weight_decay: 0.05
+  betas: [0.9, 0.95]
+  warmup_steps: 50
+  max_steps: 1000
+
+trainer:
+  accelerator: auto       # cpu | gpu | auto
+  devices: 1
+  precision: 32
+  max_steps: 1000
+  log_every_n_steps: 10
+  gradient_clip_val: 1.0
+  default_root_dir: runs/spafm-s
+
+batch_size: 4
+num_workers: 0
+seed: 42

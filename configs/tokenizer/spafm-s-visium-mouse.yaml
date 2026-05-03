@@ -1,0 +1,19 @@
+# SpaFM-S × Visium 小鼠脑 tokenizer
+# 与 default 区别：vocab_path 指向 ingest 阶段为真实数据扩展的词表（32k 基因）
+# 没这个词表，所有 gene 会被 tokenize 成 UNK，MGM mask 全 0。
+vocab_path: data/external/gene_vocab_visium_mouse.tsv
+max_genes: 1024
+gene_select: top_k
+
+expression:
+  mode: bin
+  n_bins: 51
+
+spatial:
+  mode: sincos
+  dim: 128
+  coord_scale: 1000.0
+
+add_cls: true
+add_niche: false
+seed: 0

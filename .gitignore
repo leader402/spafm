@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+.env
+.env.*
+
+# Data and generated artifacts
+data/
+runs/
+results/
+logs/
+checkpoints/
+lightning_logs/
+wandb/
+mlruns/
+*.h5ad
+*.h5
+*.zarr
+*.loom
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.tar.gz
+*.zip
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,24 @@
+data:
+  h5ad_glob: "data/processed/*/demo_*.h5ad"
+  tokenizer_config: configs/tokenizer/spafm-s.yaml
+
+embedder:
+  type: spafm                  # spafm | pca | hvg_mean
+  model_config: configs/model/spafm-s.yaml
+  ckpt: null                   # 留空则随机初始化（仅 smoke）
+  batch_size: 8
+  device: cpu
+
+tasks:
+  - name: cell_type
+    label_key: cell_type
+    cv_folds: 5
+  - name: spatial_domain
+    label_key: niche_label
+  - name: imputation
+    mask_ratio: 0.2
+
+output:
+  json_path: runs/bench/spafm-s.json
+
+seed: 42
